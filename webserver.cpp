@@ -75,58 +75,77 @@ int main(int argc, char *argv[]) {
         error("ERROR on binding");
  
     // listen and accept
-    listen(socketListener,1);
+    listen(socketListener, 5);
     clientAddrLength = sizeof(clientAddr);
-    socketfd = accept(socketListener, (struct sockaddr *) &clientAddr,                      &clientAddrLength);
-    if (socketfd < 0) 
-        error("ERROR on accept");
-             
-    int result;
-    char buffer[1024];
-    bzero(buffer, 1024);
+    int socketNum = 1;
     
-    // read client request
-    result = read(socketfd, buffer, 1024);
-    if (result < 0) 
-        error("ERROR reading from socket");
-    
-    // print client request
-    cout << buffer << endl;
-    
-    // parse file name
-    const char* filename = getFilename(buffer).c_str();
-    
-    // open file for reading
-    FILE *fp = fopen(filename, "r");
-    if (fp == NULL) {
-        string errMsg = "404 Not Found";
-        result = write(socketfd, errMsg.c_str(), 30);
-            if (result < 0) 
-                error("ERROR writing to socket");
-        error("ERROR opening file");
-    }
-    else {
-        // write file to buffer
-        char writeBuffer[10000] = { 0 };
-        int bytesRead = fread(writeBuffer, 1, 10000, fp);
+    fd_set active_fd_set;
+    FD_ZERO(&active_fd_set);
+    FD_SET(socketListener, &active_fd_set);
+
+    while(1) {
+        /*
+        if (select(socketNum + 1, &active_fd_set, NULL, 
+                    NULL, NULL) < 0)
+            error("ERROR on select");
+        */
+        //cout << "after select";   
+        //if (FD_ISSET(socketListener, &active_fd_set)) {
+            socketfd = accept(socketListener, (struct sockaddr *)                               &clientAddr, &clientAddrLength);
+            if (socketfd < 0) 
+                error("ERROR on accept");
+            
+            //socketNum++;
+            //FD_SET(socketfd, &active_fd_set);
+            
+            int result;
+            char buffer[1024];
+            bzero(buffer, 1024);
         
-        if (bytesRead > 0) {
-            // send response to client
-            result = write(socketfd, writeBuffer, 10000);
+            // read client request
+            result = read(socketfd, buffer, 1024);
             if (result < 0) 
-                error("ERROR writing to socket");
-        }
-        else {
-            string errMsg = "500 Internal Server Error";
-            result = write(socketfd, errMsg.c_str(), 30);
-            if (result < 0) 
-                error("ERROR writing to socket");
-        }
+                error("ERROR reading from socket");
+        
+            // print client request
+            cout << buffer << endl;
+        
+            // parse file name
+            const char* filename = getFilename(buffer).c_str();
+        
+            // open file for reading
+            FILE *fp = fopen(filename, "r");
+            if (fp == NULL) {
+                string errMsg = "404 Not Found";
+                result = write(socketfd, errMsg.c_str(), 30);
+                    if (result < 0) 
+                        error("ERROR writing to socket");
+                error("ERROR opening file");
+            }
+            else {
+                // write file to buffer
+                char writeBuffer[10000] = { 0 };
+                int bytesRead = fread(writeBuffer, 1, 10000, fp);
+                
+                if (bytesRead > 0) {
+                    // send response to client
+                    result = write(socketfd, writeBuffer, 10000);
+                    if (result < 0) 
+                        error("ERROR writing to socket");
+                }
+                else {
+                    string errMsg = "500 Internal Server Error";
+                    result = write(socketfd, errMsg.c_str(), 30);
+                    if (result < 0) 
+                        error("ERROR writing to socket");
+                }
+            }
+            fclose(fp);
+        //}
     }
     
-    // close sockets and files
-    fclose(fp);
-    close(socketfd);         
+    // close sockets
+    close(socketfd);  
     close(socketListener);
     return 0;
 }
