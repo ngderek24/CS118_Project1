@@ -9,6 +9,7 @@
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <unistd.h>
 
 using namespace std;
 
@@ -18,6 +19,7 @@ void error(string msgString) {
     exit(0);
 }
 
+// parses the filename from the request
 string getFilename(const string& request) {
     string filename = "";
     int filenameIndex = 5;
@@ -29,6 +31,19 @@ string getFilename(const string& request) {
     return filename;
 }
 
+// gets current GMT time in the proper format
+string getTime() {
+    time_t t;
+    time(&t);
+    struct tm *tmPtr = gmtime(&t);
+    
+    char buffer[100];
+    strftime(buffer, sizeof(buffer), "%a, %d %b %G %T GMT", tmPtr);
+    string dateString(buffer);
+    return dateString;
+}
+
+// setup the connection between server and client
 void setup(int &socketListener, int &socketfd, struct sockaddr_in &serverAddr, int portNum) {
     // open socket
     socketListener = socket(AF_INET, SOCK_STREAM, 0);
@@ -48,6 +63,31 @@ void setup(int &socketListener, int &socketfd, struct sockaddr_in &serverAddr, i
         error("ERROR on binding");
 }
 
+// formats header line given header name and value
+string formatHeader(const string& headerName, const string& headerValue) {
+    return headerName + ": " + headerValue + "\n";
+}
+
+// parses file type from the file name
+string getFileType(const string& filename) {
+    int index = filename.find(".");
+    string filetype = "";
+    filetype = filename.substr(index + 1, filename.size() - index - 1);
+    return filetype;
+}
+
+// builds header section of the response
+string buildHeaders(const string& statusCode, const string& filename) {
+    string headers = "HTTP/1.1 " + statusCode + "\n";
+    headers += formatHeader("Date", getTime());
+    headers += formatHeader("Connection", "keep-alive");
+    if (filename != "" && filename.find(".") != string::npos) {
+        headers += formatHeader("Content-Type", getFileType(filename));
+    }
+    return headers + "\n";
+}
+
+// handles request accordingly
 void handleRequest(int socketfd) {
     int result;
     char buffer[1024];
@@ -62,22 +102,24 @@ void handleRequest(int socketfd) {
     cout << buffer << endl;
 
     // parse file name
-    const char* filename = getFilename(buffer).c_str();
+    string filename = getFilename(buffer);
 
     // if no file specified, just display a message
-    if (strcmp(filename, "") == 0) {
-        result = write(socketfd, "I got your message", 18);
+    if (filename == "") {
+        string response = buildHeaders("200 OK", filename) + "I got your message";
+        result = write(socketfd, response.c_str(), response.size());
+        
         if (result < 0) 
             error("ERROR writing to socket");
     }
     else {
         // open file for reading
-        FILE *fp = fopen(filename, "r");
+        FILE *fp = fopen(filename.c_str(), "r");
         if (fp == NULL) {
-            string errMsg = "404 Not Found";
-            result = write(socketfd, errMsg.c_str(), 30);
-                if (result < 0) 
-                    error("ERROR writing to socket");
+            string response = buildHeaders("404 Not Found", "") + "404 Not Found";
+            result = write(socketfd, response.c_str(), response.size());
+            if (result < 0) 
+                error("ERROR writing to socket");
             cout << "ERROR opening file" << endl;
         }
         else {
@@ -88,13 +130,15 @@ void handleRequest(int socketfd) {
             
             if (bytesRead > 0) {
                 // send response to client
+                string response = buildHeaders("200 OK", filename);
+                result = write(socketfd, response.c_str(), response.size());
                 result = write(socketfd, writeBuffer, BUFFER_SIZE);
                 if (result < 0) 
                     error("ERROR writing to socket");
             }
             else {
-                string errMsg = "500 Internal Server Error";
-                result = write(socketfd, errMsg.c_str(), 30);
+                string response = buildHeaders("500 Internal Server Error", filename) + "500 Internal Server Error";
+                result = write(socketfd, response.c_str(), response.size());
                 if (result < 0) 
                     error("ERROR writing to socket");
             }
